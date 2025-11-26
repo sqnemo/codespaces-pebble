@@ -111,7 +111,7 @@ static void layer_update_proc(Layer *layer, GContext *ctx) {
   static char small_time[6];
   snprintf(small_time, sizeof(small_time), "%02d:%02d", t->tm_hour, t->tm_min);
 
-  GRect text_rect = GRect(TEN_RECTS[4].origin.x, 207, 65, 20);
+  GRect text_rect = GRect(TEN_RECTS[4].origin.x, 200, 65, 20);
 
   bool block_on = ten_active[4];
   
@@ -124,7 +124,7 @@ static void layer_update_proc(Layer *layer, GContext *ctx) {
   graphics_draw_text(
     ctx,
     small_time,
-    fonts_get_system_font(FONT_KEY_GOTHIC_18),
+    fonts_get_system_font(FONT_KEY_GOTHIC_24),
     text_rect,
     GTextOverflowModeTrailingEllipsis,
     GTextAlignmentCenter,
