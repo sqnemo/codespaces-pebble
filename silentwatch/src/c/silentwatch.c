@@ -201,7 +201,6 @@ static void deinit() {
   window_destroy(s_main_window);
 }
 
-
 int main(void) {
   init();
   app_event_loop();
