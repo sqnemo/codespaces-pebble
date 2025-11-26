@@ -3,6 +3,7 @@
 static Window *s_window;
 static TextLayer *s_text_layer;
 
+
 static void prv_select_click_handler(ClickRecognizerRef recognizer, void *context) {
   text_layer_set_text(s_text_layer, "Select");
 }
