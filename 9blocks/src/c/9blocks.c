@@ -1,61 +1,232 @@
 #include <pebble.h>
 
+// ================================
+//  定義
+// ================================
+#define NUM_HOUR_BLOCKS 12
+#define NUM_TEN_BLOCKS 5
+#define NUM_MIN_BLOCKS 9
+
+// ------------------------------
+// 座標定義（Pebble SDK 向け二重中括弧）
+// ------------------------------
+
+// 12時間（32x36）
+static const GRect HOUR_RECTS[NUM_HOUR_BLOCKS] = {
+  {{0,0}, {32,36}}, {{33,0}, {32,36}}, {{67,0}, {32,36}}, {{100,0}, {32,36}},
+  {{134,0}, {32,36}}, {{167,0}, {32,36}},
+
+  {{0,37}, {32,36}}, {{33,37}, {32,36}}, {{67,37}, {32,36}}, {{100,37}, {32,36}},
+  {{134,37}, {32,36}}, {{167,37}, {32,36}},
+};
+
+// 10分（65x74）
+static const GRect TEN_RECTS[NUM_TEN_BLOCKS] = {
+  {{0,75}, {65,74}},
+  {{67,75}, {65,74}},
+  {{134,75}, {65,74}},
+  {{0,151}, {65,74}},
+  {{67,151}, {65,74}},
+};
+
+// 1分（32x14）×9個
+static const GRect MIN_RECTS[NUM_MIN_BLOCKS] = {
+  {{134,151}, {32,14}},
+  {{134,166}, {32,14}},
+  {{134,181}, {32,14}},
+  {{134,196}, {32,14}},
+  {{134,211}, {32,14}},
+
+  {{167,151}, {32,14}},
+  {{167,166}, {32,14}},
+  {{167,181}, {32,14}},
+  {{167,196}, {32,14}},
+};
+
+// 秒（32x14）
+static const GRect SEC_RECT = {{167,211}, {32,14}};
+
+
+// ================================
+//  状態管理
+// ================================
 static Window *s_window;
-static TextLayer *s_text_layer;
+static Layer  *s_layer;
+
+static bool hour_active[NUM_HOUR_BLOCKS];
+static bool ten_active[NUM_TEN_BLOCKS];
+static bool min_active[NUM_MIN_BLOCKS];
+static bool sec_on;
+
+// 色反転 ON/OFF
+static bool invert_colors = false;
+
+// 関数プロトタイプ
+static void up_click_handler(ClickRecognizerRef recognizer, void *context);
+static void click_config_provider(void *context);
+
+// ================================
+//  描画処理
+// ================================
+static void layer_update_proc(Layer *layer, GContext *ctx) {
+  // --- 白黒反転の色設定 ---
+  GColor bg = invert_colors ? GColorWhite : GColorBlack;
+  GColor fg = invert_colors ? GColorBlack : GColorWhite;
+
+  // 背景塗りつぶし
+  graphics_context_set_fill_color(ctx, bg);
+  graphics_fill_rect(ctx, layer_get_bounds(layer), 0, GCornerNone);
+
+  // ブロックの描画色をfgにする
+  graphics_context_set_fill_color(ctx, fg);
 
 
-static void prv_select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  text_layer_set_text(s_text_layer, "Select");
+  // ------------------------------
+  // 現在の時刻を取得
+  // ------------------------------
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+
+  // 12時間
+  for(int i=0;i<NUM_HOUR_BLOCKS;i++){
+    if(hour_active[i])
+      graphics_fill_rect(ctx, HOUR_RECTS[i], 0, GCornerNone);
+  }
+
+  // 10分
+  for(int i=0;i<NUM_TEN_BLOCKS;i++){
+    if(ten_active[i])
+      graphics_fill_rect(ctx, TEN_RECTS[i], 0, GCornerNone);
+  }
+
+  // 1分（1〜9）
+  for(int i=0;i<NUM_MIN_BLOCKS;i++){
+    if(min_active[i])
+      graphics_fill_rect(ctx, MIN_RECTS[i], 0, GCornerNone);
+  }
+
+  // 秒ブロック
+  if(sec_on)
+    graphics_fill_rect(ctx, SEC_RECT, 0, GCornerNone);
+
+  // ================================
+  //  小さいデジタル時計の描画
+  // ================================
+  static char small_time[6];
+  snprintf(small_time, sizeof(small_time), "%02d:%02d", t->tm_hour, t->tm_min);
+
+  GRect text_rect = GRect(TEN_RECTS[4].origin.x, 207, 65, 20);
+
+  bool block_white = ten_active[4];
+
+  graphics_context_set_text_color(ctx, fg);
+
+  graphics_draw_text(
+    ctx,
+    small_time,
+    fonts_get_system_font(FONT_KEY_GOTHIC_18),
+    text_rect,
+    GTextOverflowModeTrailingEllipsis,
+    GTextAlignmentCenter,
+    NULL
+  );
 }
 
-static void prv_up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  text_layer_set_text(s_text_layer, "Up");
+// ================================
+//  時刻更新（ロジック）
+// ================================
+static void update_time(struct tm *t) {
+
+  // 12時間（0〜11個点灯）
+  int hour12 = t->tm_hour % 12;
+  if(hour12 == 0) hour12 = 12;
+  for(int i=0;i<NUM_HOUR_BLOCKS;i++){
+    hour_active[i] = (i < hour12);
+  }
+
+  // 10分（0〜5個）
+  int ten = t->tm_min / 10;
+  for(int i=0;i<NUM_TEN_BLOCKS;i++){
+    ten_active[i] = (i < ten);
+  }
+
+  // 1分（0〜9個 → ブロックは9個）
+  int one = t->tm_min % 10;
+  for(int i=0;i<NUM_MIN_BLOCKS;i++){
+    min_active[i] = (i < one);
+  }
+
+  // 秒（点滅）
+  sec_on = (t->tm_sec % 2 == 0);
+
+  layer_mark_dirty(s_layer);
 }
 
-static void prv_down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  text_layer_set_text(s_text_layer, "Down");
+static void click_config_provider(void *context) {
+  window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
 }
 
-static void prv_click_config_provider(void *context) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, prv_select_click_handler);
-  window_single_click_subscribe(BUTTON_ID_UP, prv_up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, prv_down_click_handler);
+static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
+  invert_colors = !invert_colors;     // 状態をトグル
+  layer_mark_dirty(s_layer);   // 画面再描画
 }
 
-static void prv_window_load(Window *window) {
-  Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(window_layer);
-
-  s_text_layer = text_layer_create(GRect(0, 72, bounds.size.w, 20));
-  text_layer_set_text(s_text_layer, "Press a button");
-  text_layer_set_text_alignment(s_text_layer, GTextAlignmentCenter);
-  layer_add_child(window_layer, text_layer_get_layer(s_text_layer));
+// ================================
+//  Tick
+// ================================
+static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
+  update_time(tick_time);
 }
 
-static void prv_window_unload(Window *window) {
-  text_layer_destroy(s_text_layer);
+
+// ================================
+//  Window
+// ================================
+static void window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+
+  s_layer = layer_create(bounds);
+  layer_set_update_proc(s_layer, layer_update_proc);
+  layer_add_child(root, s_layer);
+
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  update_time(t);
 }
 
-static void prv_init(void) {
+static void window_unload(Window *window) {
+  layer_destroy(s_layer);
+}
+
+
+// ================================
+//  main
+// ================================
+static void init(void) {
   s_window = window_create();
-  window_set_click_config_provider(s_window, prv_click_config_provider);
-  window_set_window_handlers(s_window, (WindowHandlers) {
-    .load = prv_window_load,
-    .unload = prv_window_unload,
+
+  // ★ これを追加
+  window_set_click_config_provider(s_window, click_config_provider);
+
+  window_set_background_color(s_window, GColorBlack);
+
+  window_set_window_handlers(s_window, (WindowHandlers){
+    .load = window_load,
+    .unload = window_unload,
   });
-  const bool animated = true;
-  window_stack_push(s_window, animated);
+
+  window_stack_push(s_window, true);
+
+  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
 }
 
-static void prv_deinit(void) {
+static void deinit(void) {
   window_destroy(s_window);
 }
 
 int main(void) {
-  prv_init();
-
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", s_window);
-
+  init();
   app_event_loop();
-  prv_deinit();
+  deinit();
 }
