@@ -448,6 +448,7 @@ static void init() {
   });
   window_stack_push(s_main_window, true);
   window_set_click_config_provider(s_main_window, click_config_provider);
+
 }
 
 static void deinit() {
