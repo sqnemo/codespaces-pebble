@@ -376,28 +376,28 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
       return;   // 移動フェーズ外では UP は完全に無視
   }
 
-  if (!moving_phase) {
+//  if (!moving_phase) {
 
       // 現在地タイル判定
-      TileType current = map[player_y][player_x];
+//      TileType current = map[player_y][player_x];
 
       // ダイス出目決定
-      dice_result = roll_dice_for_tile(current);
+//      dice_result = roll_dice_for_tile(current);
 
       // ★★ 荷物劣化：ターン開始時に +1 ★★
-      if (decay < MAX_DECAY) decay++;
+//      if (decay < MAX_DECAY) decay++;
 
-      move_dir = 0;
-      moving_phase = true;
+//      move_dir = 0;
+//      moving_phase = true;
 
       // 方向補正（既存）
-      for (int i = 0; i < 4; i++) {
-        int nx, ny;
-        get_cursor_position(&nx, &ny);
-        if (is_in_map(nx, ny)) break;
-        move_dir = (move_dir + 1) % 4;
-      }
-  }
+//      for (int i = 0; i < 4; i++) {
+//        int nx, ny;
+//        get_cursor_position(&nx, &ny);
+//        if (is_in_map(nx, ny)) break;
+//        move_dir = (move_dir + 1) % 4;
+//      }
+//  }
 
   for (int i = 0; i < 4; i++) {
     move_dir = (move_dir + 1) % 4;
