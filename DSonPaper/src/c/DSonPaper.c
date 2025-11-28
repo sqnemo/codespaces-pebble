@@ -8,8 +8,8 @@
 static Window *s_main_window;
 static Layer *s_map_layer;
 
-static int player_x = 7;   // 列（0〜9）
-static int player_y = 8;   // 行（0〜8）
+static int player_x;   // 列（0〜9）
+static int player_y;   // 行（0〜8）
 static int dice_result = 0;
 
 static int move_dir = 0;       // 0=上, 1=右, 2=下, 3=左
@@ -21,7 +21,6 @@ static int decay = 0;   // 荷物の劣化（0〜10）
 static bool game_over = false;
 static bool passed_check = false;
 static bool game_clear = false;
-
 
 
 
@@ -67,10 +66,17 @@ static void get_cursor_position(int *cx, int *cy) {
 
   switch(move_dir) {
     case 0: *cy -= 1; break; // 上
-    case 1: *cx += 1; break; // 右
+    case 1: *cx -= 1; break; // 左
     case 2: *cy += 1; break; // 下
-    case 3: *cx -= 1; break; // 左
+    case 3: *cx += 1; break; // 右
   }
+}
+
+//クリアランク
+static const char* get_rank_text(int decay) {
+  if (decay <= 8)      return "EXCELLENT!!";
+  else if (decay <= 11) return "GOOD!";
+  else                 return "SO SO";
 }
 
 //ダイスの出目制限
@@ -113,17 +119,37 @@ static void map_layer_update(Layer *layer, GContext *ctx) {
 
   // ---- GAME CLEAR ----
   if (game_clear) {
+      GRect full = layer_get_bounds(layer);
+
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_fill_rect(ctx, full, 0, GCornerNone);
+
       graphics_context_set_text_color(ctx, GColorBlack);
+
+      // CLEAR!
       graphics_draw_text(
-          ctx,
-          "CLEAR!",
-          fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-          GRect(0, 90, 200, 40),
-          GTextOverflowModeWordWrap,
-          GTextAlignmentCenter,
-          NULL
+        ctx,
+        "CLEAR!",
+        fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+        GRect(0, 40, full.size.w, 40),
+        GTextOverflowModeWordWrap,
+        GTextAlignmentCenter,
+        NULL
       );
-      return;
+
+      // ランク
+      const char* rank = get_rank_text(decay);
+      graphics_draw_text(
+        ctx,
+        rank,
+        fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+        GRect(0, 90, full.size.w, 40),
+        GTextOverflowModeWordWrap,
+        GTextAlignmentCenter,
+        NULL
+      );
+
+      return;  // ここで描画を完了
   }
 
 
@@ -213,6 +239,26 @@ static void map_layer_update(Layer *layer, GContext *ctx) {
     }
   }
 
+  // ---- チェックポイント通過表示 ----
+  {
+    int label_x = 20;   // ← 左から20px (調整可)
+    int label_y = MAP_ROWS * TILE_SIZE + 4;  // ダイスゲージと同じ高さ
+
+    const char *text = passed_check ? "Check Passed" : "Unchecked";
+
+    graphics_context_set_text_color(ctx, GColorBlack);
+
+    graphics_draw_text(
+      ctx,
+      text,
+      fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(label_x, label_y-2, 140, 16),   // ← 横幅70px
+      GTextOverflowModeWordWrap,
+      GTextAlignmentLeft,
+      NULL
+    );
+  }
+
   // --- ダイス ---
   if (dice_result > 0) {
 
@@ -245,41 +291,49 @@ static void map_layer_update(Layer *layer, GContext *ctx) {
     graphics_fill_rect(ctx, GRect(decay_x + i * 14, decay_y, 12, 12),
                        0, GCornerNone);
   }
+
 }
 
+//プレイヤー初期位置を設定
+static void find_start_position() {
+  for (int y = 0; y < MAP_ROWS; y++) {
+    for (int x = 0; x < MAP_COLS; x++) {
+      if (map[y][x] == TILE_START) {
+        player_x = x;
+        player_y = y;
+        return;
+      }
+    }
+  }
+}
 
+//ゲームリセット
+static void reset_game() {
+  decay = 0;
+  dice_result = 0;
+  moving_phase = false;
+  move_dir = 0;
+  passed_check = false;
+  game_clear = false;
+  game_over = false;
+
+  find_start_position();  // プレイヤー初期位置に戻す
+}
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   int cx, cy;
   get_cursor_position(&cx, &cy);
 
+  // ---- GAME OVER 中の SELECT → リセット ----
   if (game_over) {
-      // ---- リセット処理 ----
-      decay = 0;
-      dice_result = 0;
-      moving_phase = false;
-      move_dir = 0;
-      player_x = 7;
-      player_y = 8;
-      game_over = false;
-
+      reset_game();
       layer_mark_dirty(s_map_layer);
       return;
   }
 
-  // ---- GAME CLEAR ----
+  // ---- GAME CLEAR 中の SELECT → リセット ----
   if (game_clear) {
-      // ---- リセット ----
-      decay = 0;
-      dice_result = 0;
-      moving_phase = false;
-      move_dir = 0;
-      player_x = 7;
-      player_y = 8;
-      passed_check = false;
-      game_clear = false;
-      game_over = false;
-
+      reset_game();
       layer_mark_dirty(s_map_layer);
       return;
   }
@@ -385,29 +439,6 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
       return;   // 移動フェーズ外では UP は完全に無視
   }
 
-//  if (!moving_phase) {
-
-      // 現在地タイル判定
-//      TileType current = map[player_y][player_x];
-
-      // ダイス出目決定
-//      dice_result = roll_dice_for_tile(current);
-
-      // ★★ 荷物劣化：ターン開始時に +1 ★★
-//      if (decay < MAX_DECAY) decay++;
-
-//      move_dir = 0;
-//      moving_phase = true;
-
-      // 方向補正（既存）
-//      for (int i = 0; i < 4; i++) {
-//        int nx, ny;
-//        get_cursor_position(&nx, &ny);
-//        if (is_in_map(nx, ny)) break;
-//        move_dir = (move_dir + 1) % 4;
-//      }
-//  }
-
   for (int i = 0; i < 4; i++) {
     move_dir = (move_dir + 1) % 4;
 
@@ -422,12 +453,30 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   layer_mark_dirty(s_map_layer);
 }
 
+static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
+  if (!moving_phase) {
+      return;   // 移動フェーズ外では UP は完全に無視
+  }
+
+  for (int i = 0; i < 4; i++) {
+    move_dir = (move_dir - 1 + 4) % 4;
+
+    int cx, cy;
+    get_cursor_position(&cx, &cy);
+
+    if (is_in_map(cx, cy)) {
+      break;  // 有効方向が見つかった！
+    }
+  }
+
+  layer_mark_dirty(s_map_layer);
+}
 
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP,     up_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN,   down_click_handler);
 }
-
 
 // ---- ウィンドウ ----
 static Window *s_main_window;
@@ -455,6 +504,9 @@ static void init() {
     .load = main_window_load,
     .unload = main_window_unload
   });
+
+  find_start_position();  //プレイヤー初期位置
+
   window_stack_push(s_main_window, true);
   window_set_click_config_provider(s_main_window, click_config_provider);
 
