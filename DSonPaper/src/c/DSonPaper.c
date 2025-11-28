@@ -138,8 +138,17 @@ static void map_layer_update(Layer *layer, GContext *ctx) {
       graphics_context_set_fill_color(ctx, tile_color(t));
       graphics_fill_rect(ctx, rect, 0, GCornerNone);
 
-      graphics_context_set_stroke_color(ctx, GColorBlack);
-      graphics_draw_rect(ctx, rect);
+//      graphics_context_set_stroke_color(ctx, GColorBlack);
+//      graphics_draw_rect(ctx, rect);
+      // --- 中央の小さな黒ドット ---
+      graphics_context_set_fill_color(ctx, GColorBlack);
+
+      // このマスの中心座標
+      int cx = rect.origin.x + TILE_SIZE / 2;
+      int cy = rect.origin.y + TILE_SIZE / 2;
+
+      // 2x2 の黒い四角として描画（好みで 3x3 にもできる）
+      graphics_fill_rect(ctx, GRect(cx - 1, cy - 1, 2, 2), 0, GCornerNone);
 
       // START
       if(t == TILE_START) {
